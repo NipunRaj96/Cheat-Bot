@@ -1,0 +1,67 @@
+name: Cheat-Bot Daily
+
+on:
+  schedule:
+    # 00:30 UTC = 6:00 AM IST — 30 mins after LeetCode rolls the new daily
+    - cron: "30 0 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: cheat-bot-daily
+  cancel-in-progress: false
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+      LEETCODE_CSRFTOKEN: ${{ secrets.LEETCODE_CSRFTOKEN }}
+      PREFERRED_LANG: ${{ secrets.PREFERRED_LANG }}
+      MAX_FALLBACK_ATTEMPTS: 3
+
+      # Multi-account (optional) — uncomment and add your secrets
+      # ACCOUNTS: ${{ secrets.ACCOUNTS }}
+      # NIPUN_LEETCODE_SESSION: ${{ secrets.NIPUN_LEETCODE_SESSION }}
+      # NIPUN_LEETCODE_CSRFTOKEN: ${{ secrets.NIPUN_LEETCODE_CSRFTOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot
+        id: bot
+        run: python -m src.main
+        # Exit codes:
+        #   0 = Accepted
+        #   1 = Solution failed (WA/TLE on all attempts)
+        #   2 = Auth failed (cookies stale)
+
+      # ── Shown only on auth failure (exit code 2) ──────────────────────
+      - name: Cookies are stale — action required
+        if: failure() && steps.bot.outcome == 'failure'
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════╗"
+          echo "║                  COOKIE REFRESH NEEDED                  ║"
+          echo "╠══════════════════════════════════════════════════════════╣"
+          echo "║  Your LeetCode session cookies have expired.             ║"
+          echo "║                                                          ║"
+          echo "║  Run this on your local machine:                         ║"
+          echo "║                                                          ║"
+          echo "║    python scripts/push_cookies_to_github.py --trigger    ║"
+          echo "║                                                          ║"
+          echo "║  This will:                                              ║"
+          echo "║    1. Pull fresh cookies from your browser               ║"
+          echo "║    2. Push them to GitHub secrets automatically          ║"
+          echo "║    3. Re-trigger this workflow                           ║"
+          echo "╚══════════════════════════════════════════════════════════╝"
+          echo ""
+          exit 1

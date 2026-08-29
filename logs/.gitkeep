@@ -1,0 +1,2 @@
+# This file keeps the logs/ directory tracked by git.
+# The actual log file (runs.jsonl) is gitignored — it's personal to your machine.
