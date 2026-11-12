@@ -10,10 +10,15 @@ concurrency:
   group: cheat-bot-daily
   cancel-in-progress: false
 
+# Needed so the job can push the daily run-log commit with GITHUB_TOKEN
+permissions:
+  contents: write
+
 jobs:
   solve:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 3 attempts x up to 90s verdict polling, plus setup and the log commit
+    timeout-minutes: 10
     env:
       LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
       LEETCODE_CSRFTOKEN: ${{ secrets.LEETCODE_CSRFTOKEN }}
@@ -43,6 +48,36 @@ jobs:
         #   0 = Accepted
         #   1 = Solution failed (WA/TLE on all attempts)
         #   2 = Auth failed (cookies stale)
+
+      # ── Commit the run log every day, whatever the bot's outcome ─────
+      # Authored as the repo owner (via their GitHub noreply address), not
+      # github-actions[bot], so the commit counts on the owner's contribution
+      # graph. Also keeps the repo active so GitHub never auto-disables this
+      # scheduled workflow after 60 days without activity.
+      - name: Commit daily run log
+        if: always()
+        env:
+          OWNER: ${{ github.repository_owner }}
+          OWNER_ID: ${{ github.repository_owner_id }}
+          BOT_OUTCOME: ${{ steps.bot.outcome }}
+        run: |
+          set -euo pipefail
+          git config user.name "$OWNER"
+          git config user.email "${OWNER_ID}+${OWNER}@users.noreply.github.com"
+
+          LOG=logs/runs.jsonl
+          mkdir -p logs
+          touch "$LOG"
+          # If the bot crashed before writing its own log line, record the run anyway
+          if git diff --quiet -- "$LOG"; then
+            printf '{"ts": "%s", "account": "workflow", "status": "NoLogEntry", "bot_outcome": "%s"}\n' \
+              "$(date -u +%FT%T+00:00)" "$BOT_OUTCOME" >> "$LOG"
+          fi
+
+          git add "$LOG"
+          git commit -m "chore: daily run log $(date -u +%F) (bot: ${BOT_OUTCOME})"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
 
       # ── Shown only on auth failure (exit code 2) ──────────────────────
       - name: Cookies are stale — action required
